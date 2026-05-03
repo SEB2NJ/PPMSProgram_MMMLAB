@@ -1,0 +1,3 @@
+2026-04-29 13:16:02.628       MultiVuServer        INFO     MultiPyVuError: No running instance of MultiVu was detected. Please
+start MultiVu and retry, or call this script using
+scaffolding (-s ppms, for example).

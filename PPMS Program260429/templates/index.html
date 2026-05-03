@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPMS Measurement Control</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --panel-bg: white;
+            --text-color: #333;
+            --header-border: #ddd;
+            --input-border: #ddd;
+            --log-bg: #2c3e50;
+            --log-text: #ecf0f1;
+            --table-head: #f8f9fa;
+        }
+
+        body.dark-mode {
+            --bg-color: #1a1a2e;
+            --panel-bg: #16213e;
+            --text-color: #e94560;
+            --header-border: #0f3460;
+            --input-border: #533483;
+            --log-bg: #0f3460;
+            --log-text: #e94560;
+            --table-head: #1a1a2e;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; transition: all 0.3s ease; }
+        .container { max-width: 1000px; margin: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; }
+
+        /* Main Layout */
+        .main-layout {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        .sidebar {
+            flex: 0 0 120px;
+            position: sticky;
+            top: 20px;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .control-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .status-footer {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .card { background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; position: relative; }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .card h3 { margin-top: 0; font-size: 0.8em; color: #666; text-transform: uppercase; }
+        .card .value { font-size: 1.5em; font-weight: bold; color: #2c3e50; }
+
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: white; margin: 10% auto; padding: 25px; border-radius: 8px; width: 400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; margin-bottom: 20px; }
+        .modal-header h2 { margin: 0; font-size: 1.2em; }
+        .close-modal { cursor: pointer; font-size: 1.5em; color: #999; }
+        .close-modal:hover { color: #333; }
+
+        /* He Gauge Styles */
+        .he-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+            height: 100%;
+        }        .he-gauge-container {
+            width: 40px;
+            height: 350px; /* Taller gauge */
+            background-color: #eee;
+            border-radius: 4px;
+            margin: 15px auto;
+            position: relative;
+            overflow: visible;
+            border: 2px solid #ddd;
+        }
+        .he-gauge-fill {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 0%;
+            background-color: #3498db;
+            transition: height 0.5s ease, background-color 0.5s ease;
+        }
+        .he-threshold-marker {
+            position: absolute;
+            bottom: 60%;
+            width: 100%;
+            height: 2px;
+            background-color: #e74c3c;
+            z-index: 2;
+            opacity: 0.7;
+        }
+        .he-threshold-label {
+            position: absolute;
+            bottom: 60%;
+            right: -35px;
+            font-size: 10px;
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .controls h2 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-group input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; }
+        .btn-group { display: flex; gap: 10px; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.3s; }
+        .btn-start { background-color: #27ae60; color: white; }
+        .btn-start:hover { background-color: #2ecc71; }
+        .btn-stop { background-color: #c0392b; color: white; }
+        .btn-stop:hover { background-color: #e74c3c; }
+        .logs { background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 8px; height: 300px; overflow-y: auto; font-family: 'Courier New', Courier, monospace; font-size: 0.85em; }
+        .log-entry { margin-bottom: 5px; border-bottom: 1px solid #34495e; padding-bottom: 2px; }
+
+        /* Queue Styles */
+        .queue-container { margin-top: 20px; border-top: 1px solid #ddd; padding-top: 20px; }
+        .queue-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .queue-table th, .queue-table td { text-align: left; padding: 10px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+        .queue-table th { background-color: #f8f9fa; color: #666; text-transform: uppercase; font-size: 0.8em; }
+        .status-waiting { color: #f39c12; font-weight: bold; }
+        .status-running { color: #3498db; font-weight: bold; animation: blink 1s infinite; }
+        .status-completed { color: #27ae60; font-weight: bold; }
+        .status-error { color: #c0392b; font-weight: bold; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .btn-add { background-color: #3498db; color: white; }
+        .btn-add:hover { background-color: #2980b9; }
+        .btn-clear { background-color: #95a5a6; color: white; font-size: 0.8em; padding: 5px 10px; }
+        .btn-delete { background: none; border: none; color: #e74c3c; font-weight: bold; cursor: pointer; font-size: 1.2em; padding: 0 5px; }
+        .btn-delete:hover { color: #c0392b; transform: scale(1.2); }
+        .handle { cursor: grab; color: #ccc; font-size: 1.2em; padding-right: 10px; user-select: none; }
+        .handle:active { cursor: grabbing; }
+        .sortable-ghost { opacity: 0.4; background-color: #e1f5fe !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>PPMS Control Panel</h1>
+                <div id="current-command" style="font-size: 0.9em; color: #666; font-weight: bold;">System: Idle</div>
+            </div>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <button id="dark-mode-toggle" class="btn-clear" style="padding: 5px 10px;">🌙 Dark Mode</button>
+                <div id="connection-status" style="color: #27ae60;">● Connected</div>
+            </div>
+        </div>
+
+        <div class="main-layout">
+            <div class="sidebar">
+                <div class="he-card">
+                    <h3>He Level</h3>
+                    <div class="he-gauge-container">
+                        <div class="he-threshold-marker"></div>
+                        <div class="he-threshold-label">60%</div>
+                        <div id="he-bar" class="he-gauge-fill"></div>
+                    </div>
+                    <div id="he-val" class="value">0.00 %</div>
+                </div>
+            </div>
+
+            <div class="main-content">
+                <div class="control-panel">
+                    <div class="controls">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h2>Measurement Control</h2>
+                            <div id="queue-progress-container" style="width: 200px; height: 10px; background: #eee; border-radius: 5px; overflow: hidden; display: none;">
+                                <div id="queue-progress-bar" style="width: 0%; height: 100%; background: #27ae60; transition: width 0.3s;"></div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="seq-path">Sequence File Path:</label>
+                            <div style="display: flex; gap: 5px;">
+                                <input type="text" id="seq-path" placeholder="C:\path\to\sequence.dat">
+                                <button id="browse-seq" class="btn-clear" style="padding: 5px 10px; white-space: nowrap;">Browse</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="save-dir">Data Save Directory:</label>
+                            <div style="display: flex; gap: 5px;">
+                                <input type="text" id="save-dir" placeholder="C:\path\to\save">
+                                <button id="browse-save" class="btn-clear" style="padding: 5px 10px; white-space: nowrap;">Browse</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="file-name">Save File Name Base:</label>
+                            <input type="text" id="file-name" placeholder="measurement_001">
+                        </div>
+                        <div class="btn-group">
+                            <button id="add-btn" class="btn-add">Add to Queue</button>
+                            <button id="start-btn" class="btn-start">Start Queue</button>
+                            <button id="stop-btn" class="btn-stop">Stop / Abort</button>
+                        </div>
+
+                        <div class="queue-container">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3>Measurement Queue</h3>
+                                <button id="clear-btn" class="btn-clear">Clear Finished</button>
+                            </div>
+                            <table class="queue-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 30px;"></th>
+                                        <th>File Name</th>
+                                        <th>Sequence</th>
+                                        <th>Status</th>
+                                        <th style="width: 40px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="queue-body">
+                                    <!-- Queue items will be added here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sequence Progress Panel -->
+                <div class="control-panel" id="sequence-panel" style="display: none; margin-top: 20px;">
+                    <h3>Current Sequence: <span id="current-seq-name">None</span></h3>
+                    <div id="sequence-steps" style="max-height: 250px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 0.85em; font-family: 'Courier New', Courier, monospace;">
+                        <!-- Sequence steps will be listed here -->
+                    </div>
+                </div>
+
+                <!-- Real-time Plot Panel -->
+                <div class="control-panel" id="plot-panel" style="margin-top: 20px;">
+                    <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px; border-left: 4px solid #3498db; display: none;" id="active-task-detail">
+                        <div style="font-size: 0.75em; color: #666; text-transform: uppercase; font-weight: bold;">Current Active Task</div>
+                        <div style="font-weight: bold; margin: 3px 0;" id="active-task-name">Loading...</div>
+                        <div style="font-size: 0.85em; color: #555; word-break: break-all;" id="active-task-path">Path: -</div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3>Real-time Data Plot</h3>
+                        <div style="display: flex; gap: 10px; align-items: center; font-size: 0.8em;">
+                            <label>X-Axis:</label>
+                            <select id="plot-x-axis" style="padding: 3px;">
+                                <option value="Time">Time</option>
+                                <option value="Field">Field</option>
+                                <option value="Temp">Temperature</option>
+                            </select>
+                            <label>Y-Axis:</label>
+                            <select id="plot-y-axis" style="padding: 3px;">
+                                <option value="Signal">Signal (Auto)</option>
+                                <!-- Other keys added dynamically -->
+                            </select>
+                            <button id="snapshot-plot" class="btn-clear" style="padding: 2px 8px; background-color: #3498db;">📸 Save PNG</button>
+                            <button id="clear-plot" class="btn-clear" style="padding: 2px 8px;">Reset Plot</button>
+                        </div>
+                    </div>
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="dataChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="status-footer">
+                    <div class="card" onclick="openControl('temp')">
+                        <h3>Temperature</h3>
+                        <div id="temp-val" class="value">0.00 K</div>
+                    </div>
+                    <div class="card" onclick="openControl('field')">
+                        <h3>Magnetic Field</h3>
+                        <div id="field-val" class="value">0.00 Oe</div>
+                    </div>
+                    <div class="card" onclick="openControl('pos')">
+                        <h3>Position</h3>
+                        <div id="pos-val" class="value">0.00 deg</div>
+                    </div>
+                    <div class="card" onclick="openControl('amp')">
+                        <h3>Current Amp</h3>
+                        <div id="amp-val" class="value">0.00 mA</div>
+                    </div>
+                    <div class="card" onclick="openControl('amp')">
+                        <h3>Frequency</h3>
+                        <div id="freq-val" class="value">0.00 Hz</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Modal -->
+        <div id="control-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="modal-title">Property Control</h2>
+                    <span class="close-modal" onclick="closeControl()">&times;</span>
+                </div>
+                
+                <!-- Temp Form -->
+                <div id="form-temp" class="control-form" style="display: none;">
+                    <div class="form-group">
+                        <label>Target Temperature (K):</label>
+                        <input type="number" id="set-temp-target" step="0.1" value="300">
+                    </div>
+                    <div class="form-group">
+                        <label>Rate (K/min):</label>
+                        <input type="number" id="set-temp-rate" step="0.1" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label>Wait Time (sec):</label>
+                        <input type="number" id="set-temp-wait" value="0">
+                    </div>
+                </div>
+
+                <!-- Field Form -->
+                <div id="form-field" class="control-form" style="display: none;">
+                    <div class="form-group">
+                        <label>Target Field (Oe):</label>
+                        <input type="number" id="set-field-target" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Approach:</label>
+                        <select id="set-field-approach" style="width: 100%; padding: 8px;">
+                            <option value="0">Linear</option>
+                            <option value="1">No Overshoot</option>
+                            <option value="2">Oscillate</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Mode:</label>
+                        <select id="set-field-mode" style="width: 100%; padding: 8px;">
+                            <option value="0">Persistent</option>
+                            <option value="1">Driven</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Wait Time (sec):</label>
+                        <input type="number" id="set-field-wait" value="0">
+                    </div>
+                </div>
+
+                <!-- Position Form -->
+                <div id="form-pos" class="control-form" style="display: none;">
+                    <div class="form-group">
+                        <label>Target Position (deg):</label>
+                        <input type="number" id="set-pos-target" step="0.1" value="0">
+                    </div>
+                </div>
+
+                <!-- Amplitude/Amp Form -->
+                <div id="form-amp" class="control-form" style="display: none;">
+                    <div class="form-group">
+                        <label>Target Amplitude (mA):</label>
+                        <input type="number" id="set-amp-target" step="0.001" value="0.02">
+                    </div>
+                    <div class="form-group">
+                        <label>Frequency (Hz):</label>
+                        <input type="number" id="set-amp-freq" step="0.1" value="13">
+                    </div>
+                    <div class="form-group">
+                        <label>Offset (mA):</label>
+                        <input type="number" id="set-amp-offset" step="0.001" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Wait Time (sec):</label>
+                        <input type="number" id="set-amp-wait" value="1">
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px; text-align: right;">
+                    <button class="btn-clear" onclick="closeControl()" style="margin-right: 10px;">Cancel</button>
+                    <button class="btn-start" onclick="submitControl()">Apply Change</button>
+                </div>
+            </div>
+        </div>
+
+        <h2>Real-time Logs</h2>
+        <div id="log-container" class="logs">
+            <div class="log-entry">System initialized. Waiting for commands...</div>
+        </div>
+        <div style="text-align: right; margin-top: 5px;">
+            <button id="download-log" class="btn-clear" style="font-size: 0.75em;">Download Session Log</button>
+        </div>
+
+        <!-- Real-time Data Table -->
+        <div class="control-panel" id="data-table-panel" style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>Recent Data Points</h3>
+                <div style="display: flex; gap: 10px;">
+                    <button id="export-csv-btn" class="btn-clear" style="font-size: 0.8em; background-color: #27ae60;">📊 Export CSV</button>
+                    <button id="open-folder-btn" class="btn-clear" style="font-size: 0.8em; background-color: #f39c12;">📂 Open Data Folder</button>
+                </div>
+            </div>
+            <table class="queue-table" style="font-size: 0.8em;">                <thead id="data-table-head">
+                    <!-- Headers will be dynamic -->
+                </thead>
+                <tbody id="data-table-body">
+                    <!-- Data rows will be added here -->
+                </tbody>
+            </table>
+        </div>    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

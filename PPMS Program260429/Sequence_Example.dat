@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------- #
+START
+NewFile, 175nm_90deg_9_9T_AHE
+setPOS, 90
+setScannerOpenClose, [1], 0, 10
+setScannerScanList, [[3, 7], [9, 11]], [1], [["LOW", 24, 0.2, 0.05, 0], ["LOW", 24, 0.2, 0.05, 0]]
+
+setTemp, 250, 5, 3600
+setField, 30000, 0, 1, 60
+setAmp, 2, 13, 0, 300
+scanPOS, 0, 10, 2, 10
+scanTemp, 2, 500, 20, 5, 10
+scanField, 0, 10000, 1000, 0, 0, 10
+
+NewFile, 175nm_90deg_9_9T_AHE2
+setScannerOpenClose, [1], 1, 10
+scanFreq, [13, 17, 19, 23, 90], 0.02, 0, 10
+scanOffset, 0, 0.2, 0.05, 0.01, 13, 10
+scanAmp, 0, 0.02, 0.005, 13, 0, 10
+END
+# ---------------------------------------------------------------------------- #
+
+# ---------------------------------- Comment ---------------------------------- #
+Comment: 
+	'START': []
+        'setPOS': ['target'],
+        'setTemp': ['target', 'rate', 'waittime'],
+        'setField': ['target', 'approach', 'mode', 'waittime'],
+        'setAmp': ['target', 'frequency', 'offset', 'waittime'],
+        'setScannerOpenClose': ['CHList', 'toOpen', 'waittime'],
+        'setScannerScanList': ['CHList', 'HarmonicsList', 'LIASettingList'],
+        'scanPOS':['initial', 'final', 'increment', 'waittime'],
+        'scanTemp':['initial', 'final', 'increment', 'rate', 'waittime'],
+        'scanField':['initial', 'final', 'increment', 'approach', 'mode', 'waittime'],
+        'scanAmp':['initial', 'final', 'increment', 'frequency', 'offset', 'waittime'],
+        'scanFreq':['FreqList', 'current', 'offset', 'waittime'],
+        'scanOffset':['initial', 'final', 'increment', 'current', 'frequency', 'waittime'],
+        'NewFile': ['fileName'],
+        'END': []
+# --------------------------------- Comment End -------------------------------- #
+
+
+
